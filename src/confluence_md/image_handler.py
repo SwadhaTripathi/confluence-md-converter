@@ -108,7 +108,11 @@ def process_image(
     images_dir = output_dir / "images"
     local_path = images_dir / filename
     if client is not None and filename in attachments_by_name and not local_path.exists():
-        client.download_attachment(attachments_by_name[filename], local_path)
+        try:
+            client.download_attachment(attachments_by_name[filename], local_path)
+        except Exception as e:
+            import sys
+            print(f"  warn: skipping image '{filename}' — {e}", file=sys.stderr)
 
     macro = find_wrapping_macro(image_el)
     macro_type = macro.type if macro else None

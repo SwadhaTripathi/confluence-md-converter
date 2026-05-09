@@ -40,8 +40,13 @@ def _make_drawio_loader(
             if att is None:
                 continue
             local = download_dir / cand
-            if not local.exists():
+            if local.exists():
+                return local
+            try:
                 client.download_attachment(att, local)
+            except Exception as e:
+                print(f"  warn: skipping drawio '{cand}' — {e}", file=sys.stderr)
+                return None
             return local
         return None
 

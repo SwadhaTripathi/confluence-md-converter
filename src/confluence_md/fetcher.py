@@ -63,6 +63,22 @@ class ConfluenceClient:
             storage_xhtml=data["body"]["storage"]["value"],
         )
 
+    def _absolute_url(self, path: str) -> str:
+        """Resolve an API-returned link to an absolute URL.
+
+        Confluence Cloud's `_links.download` is relative to the `/wiki/` base
+        (e.g. `/download/attachments/...`), so we prepend `/wiki` for paths
+        that don't already include it. Pagination links (`_links.next`) usually
+        already include `/wiki/api/...`, so the prefix check handles them too.
+        """
+        if path.startswith(("http://", "https://")):
+            return path
+        if path.startswith("/wiki/"):
+            return self.base_url + path
+        if path.startswith("/"):
+            return self.base_url + "/wiki" + path
+        return self.base_url + "/wiki/" + path
+
     def list_attachments(self, page_id: str) -> list[Attachment]:
         results: list[Attachment] = []
         url = f"{self.base_url}/wiki/api/v2/pages/{page_id}/attachments"
@@ -72,15 +88,14 @@ class ConfluenceClient:
             r.raise_for_status()
             payload = r.json()
             for a in payload.get("results", []):
-                download_path = a["_links"]["download"]
                 results.append(Attachment(
                     id=str(a["id"]),
                     filename=a["title"],
                     media_type=a.get("mediaType", ""),
-                    download_url=self.base_url + download_path if download_path.startswith("/") else download_path,
+                    download_url=self._absolute_url(a["_links"]["download"]),
                 ))
             next_link = payload.get("_links", {}).get("next")
-            url = (self.base_url + next_link) if next_link else None
+            url = self._absolute_url(next_link) if next_link else None
             params = None
         return results
 
