@@ -6,7 +6,14 @@ import re
 import sys
 from pathlib import Path
 
+import truststore
 from dotenv import load_dotenv
+
+# Use the OS trust store (Windows Certificate Store / macOS keychain / Linux ca-certs)
+# instead of the bundled certifi PEM. This makes corporate HTTPS-inspecting proxies
+# work transparently because IT already installs the corporate CA in the OS store.
+# Must run before any HTTPS request — keep at module import time.
+truststore.inject_into_ssl()
 
 from .fetcher import Attachment, ConfluenceClient
 from .image_handler import TodoSidecar, process_image
