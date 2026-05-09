@@ -16,68 +16,170 @@ text-only embedder still has something to index:
 | Mermaid / PlantUML macros | full diagram source as a fenced code block |
 | **Drawio macros** | **`.drawio` attachment downloaded, decompressed, and rendered as a structured node/edge listing** |
 | Gliffy macros | macro detected; image rendered + OCR'd (source decoding TBD) |
-| Pasted images | alt text, caption, OCR text (Tesseract) |
+| Pasted images (clipboard, Outlook, etc.) | downloaded locally with sanitized filenames |
+| Internal Confluence page links | resolved to absolute URLs (`[text](https://…)`) |
 | Anything still missing | logged in a sidecar `*.todo.md` for human follow-up |
 
-## Install
+---
+
+## Quickstart — clone to first conversion
+
+Step-by-step from a fresh machine. Tested on Windows 11 + PowerShell; commands work on
+macOS/Linux with the obvious tweaks (forward slashes, `source .venv/bin/activate`).
+
+### 1. Clone the repo
 
 ```powershell
-git clone <repo-url> confluence-md-converter
+git clone git@github.com:SwadhaTripathi/claude_workflow.git
+cd claude_workflow
+```
+
+If you don't have SSH set up:
+
+```powershell
+git clone https://github.com/SwadhaTripathi/claude_workflow.git
+cd claude_workflow
+```
+
+### 2. Switch to the converter branch
+
+The tool currently lives on the `confluence-md-converter` branch (not yet merged to
+`main`):
+
+```powershell
+git checkout confluence-md-converter
 cd confluence-md-converter
+```
+
+> Once the branch is merged to `main`, step 2 collapses to just `cd confluence-md-converter`.
+
+### 3. Create and activate a Python virtual environment
+
+Python 3.10 or newer required.
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[ocr]"     # drop "[ocr]" if you don't have Tesseract
 ```
 
-OCR is optional. If `pytesseract` or the Tesseract binary isn't installed, the tool
-silently skips OCR and continues — you'll just get fewer signals per image.
-
-### Tesseract on Windows (no admin)
-
-Download the `tesseract-ocr-w64-setup-...exe` from
-<https://github.com/UB-Mannheim/tesseract/wiki>, install to a user-writable folder, and
-add that folder to your `PATH`. No admin needed.
-
-## Configure auth
-
-Copy `.env.example` to `.env` and fill in:
-
-```
-CONFLUENCE_BASE_URL=https://your-org.atlassian.net
-CONFLUENCE_EMAIL=you@example.com
-CONFLUENCE_API_TOKEN=...
-```
-
-Generate the API token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
-
-## Usage
+Your prompt should now show `(.venv)` at the start. If activation is blocked by
+`ExecutionPolicy`, run this first (process-scoped, no admin needed):
 
 ```powershell
-# Single page (URL or numeric ID)
-confluence-to-md "https://your-org.atlassian.net/wiki/spaces/X/pages/1234567/Title" --out ./output
-
-# Whole subtree (page + descendants)
-confluence-to-md 1234567 --recursive --out ./output
-
-# Skip OCR
-confluence-to-md 1234567 --no-ocr --out ./output
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-For each page you get a folder:
+### 4. Install the package
+
+```powershell
+pip install -e ".[ocr]"
+```
+
+Drop `[ocr]` if you don't want Tesseract — OCR is optional and the tool degrades cleanly
+without it. Verify the install worked:
+
+```powershell
+confluence-to-md --help
+```
+
+Expected: a help screen showing `page`, `--out`, `--no-ocr`, `--recursive`.
+
+If you instead see `ModuleNotFoundError: No module named 'confluence_md.cli'`, your
+editable install is stale — clean it and reinstall:
+
+```powershell
+pip uninstall -y confluence-md-converter
+pip install -e ".[ocr]"
+```
+
+### 5. Get an Atlassian API token
+
+1. Open <https://id.atlassian.com/manage-profile/security/api-tokens>
+2. Click **Create API token** (a "scoped" token is fine — give it `read:page:confluence`,
+   `read:attachment:confluence`, `read:space:confluence`)
+3. Copy the token — you only see it once
+
+### 6. Configure your `.env`
+
+Copy the template and fill in real values:
+
+```powershell
+copy .env.example .env
+notepad .env
+```
+
+```env
+CONFLUENCE_BASE_URL=https://your-org.atlassian.net
+CONFLUENCE_EMAIL=you@example.com
+CONFLUENCE_API_TOKEN=<the token from step 5>
+```
+
+> **Do not commit `.env`.** It's already in `.gitignore`. Never put your token in
+> `.env.example`.
+
+### 7. Run your first conversion
+
+```powershell
+confluence-to-md "https://your-org.atlassian.net/wiki/spaces/X/pages/1234567/Title" --out ./output
+```
+
+Expected output:
+
+```
+converting page 1234567…
+  expanded N drawio macro(s)
+  resolved M internal link(s)
+  → C:\…\output\<page-slug>\<page-slug>.md
+```
+
+You'll find the result at `output/<page-slug>/`:
 
 ```
 output/<page-slug>/
-├── <page-slug>.md            ← drop this into your RAG pipeline
-├── <page-slug>.todo.md       ← list of diagrams that need human description
-└── images/                   ← downloaded attachments
+├── <page-slug>.md            ← primary RAG input — drop this into your pipeline
+├── <page-slug>.todo.md       ← optional: 1-line descriptions for diagrams without alt-text
+├── images/                   ← every page image, downloaded and locally referenced
+└── diagrams/                 ← original .drawio source files (decoded inline into the .md)
 ```
+
+### 8. Verify it worked
+
+Open `<page-slug>.md` and check that:
+
+- The text content matches the source page
+- Tables, lists, and headings are preserved
+- Drawio sections show up as fenced ` ```drawio ` code blocks with node/edge listings
+- Image references point at files inside `images/` (not `blob:` URLs)
+
+---
+
+## Useful flags
+
+| Flag | What it does |
+|---|---|
+| `--recursive` | Convert the page **and every descendant** under the same root |
+| `--no-ocr` | Skip OCR even if Tesseract is installed (faster on large pages) |
+| `--out PATH` | Output directory (default: `./output`) |
+
+## Tesseract OCR (optional, no admin needed)
+
+If you want OCR on raster screenshots — not strictly required, but adds extra signal to
+RAG when an image's text labels matter:
+
+1. Download `tesseract-ocr-w64-setup-…exe` from <https://github.com/UB-Mannheim/tesseract/wiki>
+2. Install to a user-writable folder (e.g. `C:\Users\<you>\AppData\Local\Programs\Tesseract-OCR\`)
+3. Add that folder to your user `PATH` (no admin)
+4. Verify: `tesseract --version`
+
+The tool detects Tesseract automatically; if it's missing, OCR steps are silently skipped
+and the rest of the conversion continues.
 
 ## Wiring into rag-lab
 
 `rag-lab/src/loaders.py` already handles `.md` files. To index a page:
 
 ```powershell
-# 1. Convert
+# 1. Convert into rag-lab's docs folder
 confluence-to-md <url> --out ../rag-lab/docs/
 
 # 2. Index (from rag-lab/)
@@ -87,28 +189,35 @@ python -m src.index ./docs --name confluence_<page-slug>
 python -m src.ask "your question"
 ```
 
-## Limitations (be honest about what doesn't work yet)
+## Offline demo (no auth needed)
 
-- **Gliffy macros**: detected but source not yet decoded (drawio is now decoded in full —
-  see `src/confluence_md/drawio.py`).
-- **Internal Confluence links**: rendered as plain text — not resolved to the linked page.
-- **Excel / PowerPoint embeds**: image preview only.
-- **No vision model**: hand-drawn flowcharts with no embedded text labels can't be
-  meaningfully described. Use the `*.todo.md` sidecar to track these for manual
-  annotation.
+To see the converter end-to-end without setting up `.env`:
+
+```powershell
+python scripts/run_offline_demo.py
+```
+
+Runs against `tests/fixtures/wafer_handling_page.xhtml` (a representative
+engineering-style storage XHTML) and writes:
+
+- `examples/converter_output_demo.md` — what the converter produces
+- `examples/converter_output_demo.todo.md` — the sidecar TODO list
+
+Compare to `examples/mcp_markdown_baseline.md` (Atlassian MCP's native markdown of the
+same content) to see what extra signals the converter extracts.
 
 ## Project structure
 
 ```
 src/confluence_md/
 ├── cli.py             # argparse entry point + orchestration
-├── fetcher.py         # Confluence REST v2 client
+├── fetcher.py         # Confluence REST v2 client (with OS-trust-store SSL)
 ├── parser.py          # storage XHTML → markdown (markdownify subclass)
 ├── macros.py          # diagram macro detection + source extraction
-├── preprocess.py      # soup-level rewrites (drawio macro expansion)
+├── preprocess.py      # soup-level rewrites (drawio expansion, link resolution)
 ├── drawio.py          # decompress .drawio files; summarize as nodes + edges text
 ├── ocr.py             # optional Tesseract wrapper (graceful no-op without it)
-└── image_handler.py   # ImageContext + render_image() (the design-decision hot spot)
+└── image_handler.py   # ImageContext + render_image() (design-decision hot spot)
 ```
 
 ## Tests
@@ -118,28 +227,20 @@ pip install -e ".[dev]"
 pytest tests/
 ```
 
-Tests don't hit the network; they run against fixture XHTML.
+36 tests, all running against fixture XHTML — no network, no auth.
 
-## Offline demo (no auth needed)
+## Limitations
 
-To see the converter end-to-end without setting up `.env`:
-
-```powershell
-python scripts/run_offline_demo.py
-```
-
-This runs against `tests/fixtures/wafer_handling_page.xhtml` (a representative
-engineering-style storage XHTML) and writes:
-
-- `examples/converter_output_demo.md` — what the converter produces
-- `examples/converter_output_demo.todo.md` — the sidecar TODO list
-
-Compare to `examples/mcp_markdown_baseline.md` (Atlassian MCP's native markdown
-of the same content) to see what extra signals the converter extracts.
+- **Gliffy macros**: detected but source not yet decoded. The rendered PNG attachment
+  is still downloaded; OCR can pick up text labels. Drawio is decoded in full — see
+  `src/confluence_md/drawio.py`.
+- **Excel / PowerPoint embeds**: image preview only.
+- **Pages on Confluence Server / Data Center**: not supported. The fetcher uses Cloud's
+  v2 REST API. Server uses different endpoints and different auth (PAT bearer token).
 
 ## Sharing with your team
 
-This package is `pip install`-able. Once published to your internal index (or even just
+The package is `pip install`-able. Once published to your internal index (or even just
 shared as a wheel), teammates run:
 
 ```powershell
@@ -148,3 +249,14 @@ confluence-to-md <url> --out ./output
 ```
 
 No copy-pasting scripts.
+
+## Troubleshooting
+
+| Error | Likely cause | Fix |
+|---|---|---|
+| `confluence-to-md: not recognized` | `.venv` not active | `.\.venv\Scripts\Activate.ps1` |
+| `ModuleNotFoundError: No module named 'confluence_md.cli'` | Stale editable install | `pip uninstall -y confluence-md-converter && pip install -e ".[ocr]"` |
+| `KeyError: 'CONFLUENCE_BASE_URL'` | `.env` not loaded | Run from project root, confirm `.env` exists (not `.env.txt`) |
+| `SSLCertVerificationError` | Corporate proxy not in cert bundle | Already handled — the tool injects the OS trust store at startup. If you still see this, your IT hasn't installed the corporate CA in your user trust store |
+| `404` on attachment download | URL prefix bug (legacy) | Already fixed in current version. If reproducing on a fork, ensure `fetcher._absolute_url` adds `/wiki` |
+| All images missing on Windows | Filesystem-illegal chars in attachment names | Already fixed — names are sanitized before write |
