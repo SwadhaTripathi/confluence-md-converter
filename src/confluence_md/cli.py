@@ -18,7 +18,7 @@ truststore.inject_into_ssl()
 from .fetcher import Attachment, ConfluenceClient
 from .image_handler import TodoSidecar, process_image
 from .parser import parse_storage, soup_to_markdown
-from .preprocess import expand_drawio_macros
+from .preprocess import expand_drawio_macros, resolve_internal_links
 
 
 def _slugify(title: str) -> str:
@@ -67,6 +67,9 @@ def _convert_one(client: ConfluenceClient, page_id: str, out_dir: Path, ocr_enab
     expanded = expand_drawio_macros(soup, drawio_loader=drawio_loader)
     if expanded:
         print(f"  expanded {expanded} drawio macro(s)", file=sys.stderr)
+    linked = resolve_internal_links(soup, link_resolver=client.find_page_url)
+    if linked:
+        print(f"  resolved {linked} internal link(s)", file=sys.stderr)
 
     def image_processor(el):
         return process_image(

@@ -72,7 +72,11 @@ class _Converter(MarkdownConverter):
 
     def convert_ac_link(self, el, text, *args, **kwargs):
         body = el.find("ac_link-body")
-        return body.get_text(" ", strip=True) if body else (text or "")
+        link_text = body.get_text(" ", strip=True) if body else (text or "")
+        url = el.get("data-resolved-url")
+        if url and link_text:
+            return f"[{link_text}]({url})"
+        return link_text
 
     def convert_ac_link_body(self, el, text, *args, **kwargs):
         return text
@@ -88,6 +92,13 @@ class _Converter(MarkdownConverter):
 
     def convert_ri_user(self, el, text, *args, **kwargs):
         return ""
+
+    def convert_u(self, el, text, *args, **kwargs):
+        # Markdown has no native underline; <u> is widely supported by renderers
+        # and indexed as plain text by RAG embedders.
+        if not text or not text.strip():
+            return text
+        return f"<u>{text}</u>"
 
 
 def parse_storage(storage_xhtml: str) -> BeautifulSoup:

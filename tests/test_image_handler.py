@@ -87,6 +87,30 @@ def test_pads_with_blank_lines_for_clean_inline_placement():
     assert md.endswith("\n\n")
 
 
+def test_safe_local_name_strips_forbidden_chars():
+    from confluence_md.image_handler import _safe_local_name
+
+    name = "GetClipboardImage.ashx?Id=bd14c311&DC=GEU4&pkey=abc"
+    safe = _safe_local_name(name)
+    assert "?" not in safe        # would crash open() on Windows
+    assert "/" not in safe
+    assert "\\" not in safe
+    assert "GetClipboardImage" in safe
+    # & is allowed on Windows, so it stays — only the path-illegal chars get replaced
+    assert safe == "GetClipboardImage.ashx_Id=bd14c311&DC=GEU4&pkey=abc"
+
+
+def test_safe_local_name_truncates_long_names():
+    from confluence_md.image_handler import _safe_local_name
+    assert len(_safe_local_name("a" * 250)) == 100
+
+
+def test_safe_local_name_handles_empty():
+    from confluence_md.image_handler import _safe_local_name
+    assert _safe_local_name("") == "unnamed"
+    assert _safe_local_name("   ") == "unnamed"
+
+
 def test_caption_does_not_leak_between_sibling_images():
     """Regression: an image without its own <ac:caption> must not pick up a sibling's caption."""
     from bs4 import BeautifulSoup

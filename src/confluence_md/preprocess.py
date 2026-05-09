@@ -1,8 +1,11 @@
 """Soup-level pre-processing that runs after parse_storage() but before markdown conversion.
 
-Currently only `expand_drawio_macros`: for each drawio macro, fetch the matching .drawio
-attachment, decode it, summarize, and inject a synthetic <ac:plain-text-body> so the
-existing inline-source-macro path picks it up and emits a fenced ```drawio code block.
+- expand_drawio_macros: for each drawio macro, fetch the matching .drawio attachment,
+  decode it, summarize, and inject a synthetic <ac:plain-text-body> so the existing
+  inline-source-macro path picks it up and emits a fenced ```drawio code block.
+- resolve_internal_links: for each <ac:link> with a <ri:page> target, look up the
+  page's URL and tag the link element with `data-resolved-url` so the converter can
+  emit `[text](url)` instead of just `text`.
 """
 from __future__ import annotations
 
@@ -16,6 +19,7 @@ from .macros import _macro_name, get_macro_param
 
 
 DrawioLoader = Callable[[str], Optional[Path]]
+LinkResolver = Callable[[str, str], Optional[str]]  # (title, space_key) -> URL or None
 
 
 def expand_drawio_macros(soup: BeautifulSoup, *, drawio_loader: DrawioLoader) -> int:
@@ -47,3 +51,29 @@ def expand_drawio_macros(soup: BeautifulSoup, *, drawio_loader: DrawioLoader) ->
         macro.append(body)
         expanded += 1
     return expanded
+
+
+def resolve_internal_links(soup: BeautifulSoup, *, link_resolver: LinkResolver) -> int:
+    """Tag each resolvable <ac:link><ri:page/></ac:link> with `data-resolved-url`
+    so the converter can render it as a real markdown link. Returns count resolved."""
+    cache: dict[tuple[str, str], Optional[str]] = {}
+    resolved = 0
+    for link in soup.find_all(["ac_link", "ac:link"]):
+        page_ref = link.find(["ri_page", "ri:page"])
+        if page_ref is None:
+            continue
+        title = page_ref.get("ri:content-title") or page_ref.get("ri_content-title") or ""
+        space_key = page_ref.get("ri:space-key") or page_ref.get("ri_space-key") or ""
+        if not title:
+            continue
+        cache_key = (title, space_key)
+        if cache_key not in cache:
+            try:
+                cache[cache_key] = link_resolver(title, space_key)
+            except Exception:
+                cache[cache_key] = None
+        url = cache[cache_key]
+        if url:
+            link["data-resolved-url"] = url
+            resolved += 1
+    return resolved

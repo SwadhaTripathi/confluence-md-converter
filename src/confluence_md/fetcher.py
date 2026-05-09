@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 from urllib.parse import urlparse, parse_qs
 
 import requests
@@ -107,6 +107,48 @@ class ConfluenceClient:
                 for chunk in r.iter_content(chunk_size=64 * 1024):
                     f.write(chunk)
         return dest
+
+    def get_space_id(self, space_key: str) -> Optional[str]:
+        """Translate a space key (e.g. 'FG') to a numeric space-id required by v2."""
+        cache = getattr(self, "_space_id_cache", None)
+        if cache is None:
+            self._space_id_cache = cache = {}
+        if space_key in cache:
+            return cache[space_key]
+        r = self.session.get(f"{self.base_url}/wiki/api/v2/spaces", params={"keys": space_key})
+        if r.status_code != 200:
+            cache[space_key] = None
+            return None
+        results = r.json().get("results", [])
+        cache[space_key] = str(results[0]["id"]) if results else None
+        return cache[space_key]
+
+    def find_page_url(self, title: str, space_key: Optional[str] = None) -> Optional[str]:
+        """Resolve a page title (optionally scoped to a space) to its absolute URL."""
+        cache = getattr(self, "_page_url_cache", None)
+        if cache is None:
+            self._page_url_cache = cache = {}
+        cache_key = (title, space_key or "")
+        if cache_key in cache:
+            return cache[cache_key]
+
+        params: dict = {"title": title, "limit": 1}
+        if space_key:
+            sid = self.get_space_id(space_key)
+            if sid:
+                params["space-id"] = sid
+        r = self.session.get(f"{self.base_url}/wiki/api/v2/pages", params=params)
+        if r.status_code != 200:
+            cache[cache_key] = None
+            return None
+        results = r.json().get("results", [])
+        if not results:
+            cache[cache_key] = None
+            return None
+        webui = results[0].get("_links", {}).get("webui")
+        url = self._absolute_url(webui) if webui else None
+        cache[cache_key] = url
+        return url
 
     def iter_pages_under(self, root_page_id: str) -> Iterator[str]:
         """Yield page IDs for the root and every descendant. Useful for recursive export."""

@@ -89,6 +89,35 @@ def test_drawio_macro_detected_but_source_not_inline():
     assert info.inline is False
 
 
+def test_underline_preserved_as_html_u_tag():
+    storage = '<p>This is <u>underlined text</u> in a paragraph.</p>'
+    md = storage_to_markdown(storage, _stub_image_processor, page_title="P")
+    assert "<u>underlined text</u>" in md
+
+
+def test_internal_link_with_resolved_url_becomes_markdown_link():
+    storage = (
+        '<p>See '
+        '<ac:link data-resolved-url="https://example.com/page">'
+        '<ri:page ri:content-title="Other"/>'
+        '<ac:link-body>this page</ac:link-body>'
+        '</ac:link>'
+        ' for details.</p>'
+    )
+    md = storage_to_markdown(storage, _stub_image_processor, page_title="P")
+    assert "[this page](https://example.com/page)" in md
+
+
+def test_internal_link_without_resolved_url_renders_as_plain_text():
+    storage = (
+        '<ac:link><ri:page ri:content-title="Other"/>'
+        '<ac:link-body>just text</ac:link-body></ac:link>'
+    )
+    md = storage_to_markdown(storage, _stub_image_processor, page_title="P")
+    assert "just text" in md
+    assert "](" not in md
+
+
 def test_unknown_macro_passes_text_through():
     storage = (
         '<ac:structured-macro ac:name="randomthing">'

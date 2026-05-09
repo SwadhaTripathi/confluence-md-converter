@@ -6,6 +6,7 @@ YOU implement render_image(). Everything else is plumbing.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -14,6 +15,26 @@ from bs4 import Tag
 
 from . import ocr
 from .macros import find_wrapping_macro
+
+
+# Characters that Windows refuses in filenames. Linux is more permissive but '?'
+# also breaks markdown image refs (renderers parse it as a query-string start),
+# so sanitizing for the strictest target gives consistent behavior everywhere.
+_FORBIDDEN_NAME_CHARS = re.compile(r'[<>:"/\\|?*\s]+')
+
+
+def _safe_local_name(name: str, max_len: int = 100) -> str:
+    """Make `name` safe to use as both an on-disk filename and a markdown image ref.
+
+    Confluence allows attachments named like `GetClipboardImage.ashx?Id=...&pkey=...`
+    (when images are pasted from Outlook clipboard). Those names contain characters
+    Windows rejects in `open()`, so we collapse them while keeping enough of the
+    original to remain recognizable.
+    """
+    safe = _FORBIDDEN_NAME_CHARS.sub("_", name or "").strip("._")
+    if not safe:
+        return "unnamed"
+    return safe[:max_len]
 
 if TYPE_CHECKING:
     from .fetcher import Attachment, ConfluenceClient
@@ -105,8 +126,9 @@ def process_image(
     if not filename:
         return ""
 
+    local_filename = _safe_local_name(filename)
     images_dir = output_dir / "images"
-    local_path = images_dir / filename
+    local_path = images_dir / local_filename
     if client is not None and filename in attachments_by_name and not local_path.exists():
         try:
             client.download_attachment(attachments_by_name[filename], local_path)
@@ -129,7 +151,7 @@ def process_image(
 
     ctx = ImageContext(
         image_filename=filename,
-        local_path=str(Path("images") / filename).replace("\\", "/"),
+        local_path=str(Path("images") / local_filename).replace("\\", "/"),
         alt_text=_attr(image_el, "ac:alt", "ac_alt"),
         caption=_extract_caption(image_el),
         macro_type=macro_type,
