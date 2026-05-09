@@ -30,30 +30,18 @@ macOS/Linux with the obvious tweaks (forward slashes, `source .venv/bin/activate
 ### 1. Clone the repo
 
 ```powershell
-git clone git@github.com:SwadhaTripathi/claude_workflow.git
-cd claude_workflow
+git clone git@github.com:SwadhaTripathi/confluence-md-converter.git
+cd confluence-md-converter
 ```
 
 If you don't have SSH set up:
 
 ```powershell
-git clone https://github.com/SwadhaTripathi/claude_workflow.git
-cd claude_workflow
-```
-
-### 2. Switch to the converter branch
-
-The tool currently lives on the `confluence-md-converter` branch (not yet merged to
-`main`):
-
-```powershell
-git checkout confluence-md-converter
+git clone https://github.com/SwadhaTripathi/confluence-md-converter.git
 cd confluence-md-converter
 ```
 
-> Once the branch is merged to `main`, step 2 collapses to just `cd confluence-md-converter`.
-
-### 3. Create and activate a Python virtual environment
+### 2. Create and activate a Python virtual environment
 
 Python 3.10 or newer required.
 
@@ -69,7 +57,7 @@ Your prompt should now show `(.venv)` at the start. If activation is blocked by
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-### 4. Install the package
+### 3. Install the package
 
 ```powershell
 pip install -e ".[ocr]"
@@ -92,14 +80,14 @@ pip uninstall -y confluence-md-converter
 pip install -e ".[ocr]"
 ```
 
-### 5. Get an Atlassian API token
+### 4. Get an Atlassian API token
 
 1. Open <https://id.atlassian.com/manage-profile/security/api-tokens>
 2. Click **Create API token** (a "scoped" token is fine — give it `read:page:confluence`,
    `read:attachment:confluence`, `read:space:confluence`)
 3. Copy the token — you only see it once
 
-### 6. Configure your `.env`
+### 5. Configure your `.env`
 
 Copy the template and fill in real values:
 
@@ -117,7 +105,7 @@ CONFLUENCE_API_TOKEN=<the token from step 5>
 > **Do not commit `.env`.** It's already in `.gitignore`. Never put your token in
 > `.env.example`.
 
-### 7. Run your first conversion
+### 6. Run your first conversion
 
 ```powershell
 confluence-to-md "https://your-org.atlassian.net/wiki/spaces/X/pages/1234567/Title" --out ./output
@@ -142,7 +130,7 @@ output/<page-slug>/
 └── diagrams/                 ← original .drawio source files (decoded inline into the .md)
 ```
 
-### 8. Verify it worked
+### 7. Verify it worked
 
 Open `<page-slug>.md` and check that:
 
@@ -150,6 +138,35 @@ Open `<page-slug>.md` and check that:
 - Tables, lists, and headings are preserved
 - Drawio sections show up as fenced ` ```drawio ` code blocks with node/edge listings
 - Image references point at files inside `images/` (not `blob:` URLs)
+
+---
+
+---
+
+## Security: what's safe to share
+
+Two pieces of state in this project have very different sensitivity. Treat them
+accordingly.
+
+| File / artifact | Contains | Safe to share? | Notes |
+|---|---|---|---|
+| `.env` | Your Atlassian email + API token | **Never share, never commit** | Read-only token for Confluence; if it leaks, anyone with it can impersonate your read access. Already in `.gitignore` |
+| `.env.example` | Placeholder template (no real values) | Yes | Committed, used to bootstrap teammates' setups |
+| Converted `.md` files | The page's text + diagram source + image refs — *no auth tokens, no API keys* | As broadly as the source Confluence page allows | Output inherits the sensitivity of its source page |
+| Downloaded `images/` and `diagrams/` | The actual page attachments | Same as the source page | These are bytes Confluence served you — share with the same audience |
+| `*.todo.md` sidecar | List of images that need 1-line descriptions | Same as the source | No secrets |
+
+**Two checks before publishing converted output:**
+
+1. **`grep -ri "atlassian" output/` shouldn't show your token.** It won't — the converter
+   never writes auth values into output — but it's a 3-second sanity check.
+2. **Confirm the source page's audience matches the destination.** A page tagged for
+   Engineering shouldn't end up in a public RAG index just because the conversion was
+   easy. The tool can't enforce this; you can.
+
+The API token *only* exists in `.env` and in HTTP request headers at conversion time.
+It is never embedded in the markdown output. You can share the entire `output/<page-slug>/`
+folder with anyone authorised to see the original Confluence page.
 
 ---
 
