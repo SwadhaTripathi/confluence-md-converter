@@ -1,0 +1,193 @@
+"""Image handling: gather every signal we can extract about a Confluence image
+(macro source, alt text, caption, OCR), then hand off to render_image() — the
+single place where Decisions A and B (OCR strictness + TODO marker style) become code.
+
+YOU implement render_image(). Everything else is plumbing.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional, TYPE_CHECKING
+
+from bs4 import Tag
+
+from . import ocr
+from .macros import find_wrapping_macro
+
+if TYPE_CHECKING:
+    from .fetcher import Attachment, ConfluenceClient
+
+
+@dataclass
+class ImageContext:
+    """Everything the renderer knows about one image on the page."""
+    image_filename: str
+    local_path: str               # path of the downloaded image, relative to the .md file
+    alt_text: str                 # from ac:image's ac:alt attribute (may be empty)
+    caption: str                  # from <ac:caption> or nothing (may be empty)
+    macro_type: Optional[str]     # "mermaid" | "plantuml" | "drawio" | "gliffy" | None
+    macro_source: Optional[str]   # diagram source as text, or None if not extractable
+    ocr_text: str                 # tesseract output ("" if OCR off / unavailable / failed)
+    ocr_confidence: float         # 0.0–1.0; 0.0 means "no useful OCR signal"
+    todo_id: str                  # sequential id like "img-001"; referenced by sidecar TODO file
+
+
+@dataclass
+class TodoSidecar:
+    """Collects images that have no extractable description, for human follow-up."""
+    entries: list[dict] = field(default_factory=list)
+    _counter: int = 0
+
+    def next_id(self) -> str:
+        self._counter += 1
+        return f"img-{self._counter:03d}"
+
+    def add(self, todo_id: str, filename: str, ocr_hint: str) -> None:
+        self.entries.append({"id": todo_id, "filename": filename, "ocr_hint": ocr_hint})
+
+    def render(self, page_title: str) -> str:
+        if not self.entries:
+            return f"# TODO — diagrams needing description\n\nPage: {page_title}\n\n_All diagrams had extractable descriptions. Nothing to do._\n"
+        lines = [f"# TODO — diagrams needing description", f"", f"Page: {page_title}", ""]
+        for e in self.entries:
+            lines.append(f"## {e['id']} — {e['filename']}")
+            if e["ocr_hint"]:
+                lines.append(f"")
+                lines.append(f"OCR hint: {e['ocr_hint']!r}")
+            lines.append(f"")
+            lines.append(f"_Describe this diagram in 1-3 sentences and replace the corresponding HTML comment in the main .md file._")
+            lines.append(f"")
+        return "\n".join(lines)
+
+
+def _attr(tag: Tag, *names: str) -> str:
+    for n in names:
+        v = tag.get(n)
+        if v:
+            return v
+    return ""
+
+
+def _extract_caption(image_el: Tag) -> str:
+    """Confluence caption lives in <ac:caption> as a sibling or child of <ac:image>."""
+    cap = image_el.find(["ac:caption", "ac_caption"])
+    if cap:
+        return cap.get_text(" ", strip=True)
+    parent = image_el.parent
+    if parent:
+        cap = parent.find(["ac:caption", "ac_caption"])
+        if cap:
+            return cap.get_text(" ", strip=True)
+    return ""
+
+
+def _resolve_filename(image_el: Tag) -> Optional[str]:
+    """Find the attachment filename or external URL that the <ac:image> points at."""
+    att = image_el.find(["ri:attachment", "ri_attachment"])
+    if att is not None:
+        return _attr(att, "ri:filename", "ri_filename") or None
+    url = image_el.find(["ri:url", "ri_url"])
+    if url is not None:
+        return _attr(url, "ri:value", "ri_value") or None
+    return None
+
+
+def process_image(
+    image_el: Tag,
+    *,
+    attachments_by_name: dict[str, "Attachment"],
+    output_dir: Path,
+    client: Optional["ConfluenceClient"],
+    todo: TodoSidecar,
+    ocr_enabled: bool,
+) -> str:
+    """Build the ImageContext for a single <ac:image> element and call render_image().
+
+    Returns the markdown block to substitute in place of the <ac:image>.
+    """
+    filename = _resolve_filename(image_el)
+    if not filename:
+        return ""
+
+    images_dir = output_dir / "images"
+    local_path = images_dir / filename
+    if client is not None and filename in attachments_by_name and not local_path.exists():
+        client.download_attachment(attachments_by_name[filename], local_path)
+
+    macro = find_wrapping_macro(image_el)
+    macro_type = macro.type if macro else None
+    macro_source = macro.source if (macro and macro.inline and macro.source) else None
+
+    ocr_text, ocr_conf = ("", 0.0)
+    if ocr_enabled and local_path.exists() and ocr.is_available():
+        ocr_text, ocr_conf = ocr.extract_text(local_path)
+
+    todo_id = todo.next_id()
+    has_description = bool(macro_source) or bool(_attr(image_el, "ac:alt", "ac_alt")) or bool(_extract_caption(image_el))
+    if not has_description:
+        todo.add(todo_id, filename, ocr_text)
+
+    ctx = ImageContext(
+        image_filename=filename,
+        local_path=str(Path("images") / filename).replace("\\", "/"),
+        alt_text=_attr(image_el, "ac:alt", "ac_alt"),
+        caption=_extract_caption(image_el),
+        macro_type=macro_type,
+        macro_source=macro_source,
+        ocr_text=ocr_text,
+        ocr_confidence=ocr_conf,
+        todo_id=todo_id,
+    )
+    return render_image(ctx)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# YOUR CONTRIBUTION — write the body of this function.
+# ──────────────────────────────────────────────────────────────────────────────
+def render_image(ctx: ImageContext) -> str:
+    """Produce the markdown block for ONE image, combining every signal we have.
+
+    This function embodies the design decisions from the planning conversation:
+
+      Decision A → INCLUDE OCR text with a confidence tag (lossless capture).
+                   Even low-confidence OCR has value; we tag it so a future filter
+                   or smarter LLM in the loop can decide what to trust.
+
+      Decision B → MAIN .md uses HTML comments (invisible in rendered preview but
+                   indexed by embedders). The sidecar TODO file (managed by the
+                   caller, not by you) lists images that need human description.
+
+    Inputs available on `ctx`:
+      ctx.image_filename, ctx.local_path        → for the markdown image reference
+      ctx.alt_text, ctx.caption                 → author's intent (may be empty)
+      ctx.macro_type, ctx.macro_source          → strongest signal when present
+                                                  (mermaid/plantuml source as text)
+      ctx.ocr_text, ctx.ocr_confidence          → noisy but lossless extra signal
+      ctx.todo_id                               → reference key into sidecar TODO file
+
+    Goals:
+      • A reader of the rendered markdown sees a sensible image + caption.
+      • A RAG embedder ingests every textual signal we have so semantic search
+        works *without* a vision model.
+      • Empty / missing fields don't produce ugly placeholders like "alt: None".
+
+    Suggested output anatomy (you decide ordering, formatting, and what to skip):
+
+        ![<alt or filename>](<local_path> "<caption if any>")
+
+        <!-- todo: <id>; ocr-confidence: <0.00> -->
+
+        **Caption:** <caption>
+        **Diagram source (<macro_type>):**
+        ```<macro_type>
+        <macro_source>
+        ```
+        **OCR text:** <ocr_text>
+
+    Return the markdown string (with leading/trailing blank lines so it sits cleanly
+    in surrounding prose). Return "" to skip the image entirely.
+    """
+    raise NotImplementedError(
+        "render_image() is your contribution — see the docstring for guidance."
+    )
