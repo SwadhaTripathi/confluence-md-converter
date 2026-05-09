@@ -1,0 +1,41 @@
+<mxfile host="confluence" version="20.5.1">
+  <diagram name="Recovery Flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="start" value="Start" style="ellipse" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="120" height="60"/>
+        </mxCell>
+        <mxCell id="detect" value="Detect Wafer Handling Failure" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="200" height="60"/>
+        </mxCell>
+        <mxCell id="set_safety" value="Set Safety Flag = True" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="200" height="60"/>
+        </mxCell>
+        <mxCell id="halted" value="Move to Halted State" style="rhombus" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="200" height="60"/>
+        </mxCell>
+        <mxCell id="user_action" value="User triggers Revive All" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="200" height="60"/>
+        </mxCell>
+        <mxCell id="revive" value="Run Revive sequence (mount, safety, post-safety, EU)" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="320" height="60"/>
+        </mxCell>
+        <mxCell id="success" value="Service" style="ellipse" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="120" height="60"/>
+        </mxCell>
+        <mxCell id="failure" value="User Manual Operation" style="ellipse" vertex="1" parent="1">
+          <mxGeometry x="240" y="640" width="180" height="60"/>
+        </mxCell>
+        <mxCell id="e1" source="start" target="detect" edge="1" parent="1"/>
+        <mxCell id="e2" source="detect" target="set_safety" edge="1" parent="1" value="failure detected"/>
+        <mxCell id="e3" source="set_safety" target="halted" edge="1" parent="1"/>
+        <mxCell id="e4" source="halted" target="user_action" edge="1" parent="1"/>
+        <mxCell id="e5" source="user_action" target="revive" edge="1" parent="1" value="revive_start"/>
+        <mxCell id="e6" source="revive" target="success" edge="1" parent="1" value="revive_passed"/>
+        <mxCell id="e7" source="revive" target="failure" edge="1" parent="1" value="revive_failed"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

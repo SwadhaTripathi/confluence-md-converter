@@ -14,7 +14,8 @@ text-only embedder still has something to index:
 | Source | What we extract |
 |---|---|
 | Mermaid / PlantUML macros | full diagram source as a fenced code block |
-| Drawio / Gliffy macros | macro detected; image rendered + OCR’d |
+| **Drawio macros** | **`.drawio` attachment downloaded, decompressed, and rendered as a structured node/edge listing** |
+| Gliffy macros | macro detected; image rendered + OCR'd (source decoding TBD) |
 | Pasted images | alt text, caption, OCR text (Tesseract) |
 | Anything still missing | logged in a sidecar `*.todo.md` for human follow-up |
 
@@ -88,8 +89,8 @@ python -m src.ask "your question"
 
 ## Limitations (be honest about what doesn't work yet)
 
-- **Drawio / Gliffy macros**: macro is detected but the source XML (stored as a separate
-  attachment) isn't decoded. The rendered PNG + OCR are used as fallback. Future work.
+- **Gliffy macros**: detected but source not yet decoded (drawio is now decoded in full —
+  see `src/confluence_md/drawio.py`).
 - **Internal Confluence links**: rendered as plain text — not resolved to the linked page.
 - **Excel / PowerPoint embeds**: image preview only.
 - **No vision model**: hand-drawn flowcharts with no embedded text labels can't be
@@ -104,6 +105,8 @@ src/confluence_md/
 ├── fetcher.py         # Confluence REST v2 client
 ├── parser.py          # storage XHTML → markdown (markdownify subclass)
 ├── macros.py          # diagram macro detection + source extraction
+├── preprocess.py      # soup-level rewrites (drawio macro expansion)
+├── drawio.py          # decompress .drawio files; summarize as nodes + edges text
 ├── ocr.py             # optional Tesseract wrapper (graceful no-op without it)
 └── image_handler.py   # ImageContext + render_image() (the design-decision hot spot)
 ```

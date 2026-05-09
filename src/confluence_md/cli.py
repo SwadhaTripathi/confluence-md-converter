@@ -8,15 +8,37 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .fetcher import ConfluenceClient
+from .fetcher import Attachment, ConfluenceClient
 from .image_handler import TodoSidecar, process_image
-from .parser import storage_to_markdown
+from .parser import parse_storage, soup_to_markdown
+from .preprocess import expand_drawio_macros
 
 
 def _slugify(title: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", title).strip().lower()
     slug = re.sub(r"[\s_-]+", "-", slug)
     return slug or "page"
+
+
+def _make_drawio_loader(
+    client: ConfluenceClient,
+    attachments_by_name: dict[str, Attachment],
+    download_dir: Path,
+):
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    def loader(diagram_name: str) -> Path | None:
+        for cand in (f"{diagram_name}.drawio", f"{diagram_name}.tmp", diagram_name):
+            att = attachments_by_name.get(cand)
+            if att is None:
+                continue
+            local = download_dir / cand
+            if not local.exists():
+                client.download_attachment(att, local)
+            return local
+        return None
+
+    return loader
 
 
 def _convert_one(client: ConfluenceClient, page_id: str, out_dir: Path, ocr_enabled: bool) -> Path:
@@ -28,6 +50,12 @@ def _convert_one(client: ConfluenceClient, page_id: str, out_dir: Path, ocr_enab
     page_dir.mkdir(parents=True, exist_ok=True)
     todo = TodoSidecar()
 
+    soup = parse_storage(page.storage_xhtml)
+    drawio_loader = _make_drawio_loader(client, attachments_by_name, page_dir / "diagrams")
+    expanded = expand_drawio_macros(soup, drawio_loader=drawio_loader)
+    if expanded:
+        print(f"  expanded {expanded} drawio macro(s)", file=sys.stderr)
+
     def image_processor(el):
         return process_image(
             el,
@@ -38,7 +66,7 @@ def _convert_one(client: ConfluenceClient, page_id: str, out_dir: Path, ocr_enab
             ocr_enabled=ocr_enabled,
         )
 
-    md = storage_to_markdown(page.storage_xhtml, image_processor, page_title=page.title)
+    md = soup_to_markdown(soup, image_processor, page_title=page.title)
 
     md_path = page_dir / f"{_slugify(page.title)}.md"
     md_path.write_text(md, encoding="utf-8")

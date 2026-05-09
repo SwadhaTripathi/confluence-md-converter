@@ -81,8 +81,28 @@ def evaluate_safety(error: WaferError) -> bool:
     return False
 ```
 
-Diagrams below were drawn in draw.io — the macro is detected but the source XML lives in a separate attachment that v0.1 does not yet decode.
+Recovery flow drawn in draw.io. The macro source is decoded and emitted below as a structured node/edge listing.
 
+```drawio
+Diagram: Recovery Flow
+Nodes:
+  - Start
+  - Detect Wafer Handling Failure
+  - Set Safety Flag = True
+  - Move to Halted State
+  - User triggers Revive All
+  - Run Revive sequence (mount, safety, post-safety, EU)
+  - Service
+  - User Manual Operation
+Edges:
+  - Start -> Detect Wafer Handling Failure
+  - Detect Wafer Handling Failure -> Set Safety Flag = True (failure detected)
+  - Set Safety Flag = True -> Move to Halted State
+  - Move to Halted State -> User triggers Revive All
+  - User triggers Revive All -> Run Revive sequence (mount, safety, post-safety, EU) (revive_start)
+  - Run Revive sequence (mount, safety, post-safety, EU) -> Service (revive_passed)
+  - Run Revive sequence (mount, safety, post-safety, EU) -> User Manual Operation (revive_failed)
+```
 
 
 

@@ -12,7 +12,7 @@ from typing import Callable
 from bs4 import BeautifulSoup, Tag
 from markdownify import MarkdownConverter
 
-from .macros import extract_macro_source
+from .macros import extract_macro_source, get_macro_param
 
 
 ImageProcessor = Callable[[Tag], str]
@@ -22,13 +22,6 @@ def _normalize_tag_names(soup: BeautifulSoup) -> None:
     for tag in soup.find_all():
         if ":" in tag.name:
             tag.name = tag.name.replace(":", "_")
-
-
-def _get_param(macro_el: Tag, name: str) -> str:
-    for p in macro_el.find_all("ac_parameter"):
-        if p.get("ac:name") == name or p.get("ac_name") == name:
-            return p.get_text().strip()
-    return ""
 
 
 class _Converter(MarkdownConverter):
@@ -47,7 +40,7 @@ class _Converter(MarkdownConverter):
             return f"\n\n```{macro.type}\n{macro.source}\n```\n\n"
 
         if name == "code":
-            lang = _get_param(el, "language")
+            lang = get_macro_param(el,"language")
             body = el.find("ac_plain-text-body")
             code = body.get_text() if body else ""
             return f"\n\n```{lang}\n{code}\n```\n\n"
@@ -56,7 +49,7 @@ class _Converter(MarkdownConverter):
             return f"\n\n> **{name.capitalize()}:** {text.strip()}\n\n"
 
         if name == "expand":
-            title = _get_param(el, "title")
+            title = get_macro_param(el,"title")
             heading = f"**{title}**\n\n" if title else ""
             return f"\n\n{heading}{text}\n\n"
 
@@ -97,14 +90,29 @@ class _Converter(MarkdownConverter):
         return ""
 
 
+def parse_storage(storage_xhtml: str) -> BeautifulSoup:
+    """Parse storage-format XHTML and normalize namespaced tag names so markdownify's
+    method dispatch can find our `convert_ac_*` / `convert_ri_*` handlers."""
+    soup = BeautifulSoup(storage_xhtml, "html.parser")
+    _normalize_tag_names(soup)
+    return soup
+
+
+def soup_to_markdown(
+    soup: BeautifulSoup,
+    image_processor: ImageProcessor,
+    *,
+    page_title: str,
+) -> str:
+    converter = _Converter(image_processor=image_processor, heading_style="ATX", bullets="-")
+    body_md = converter.convert_soup(soup).strip()
+    return f"# {page_title}\n\n{body_md}\n"
+
+
 def storage_to_markdown(
     storage_xhtml: str,
     image_processor: ImageProcessor,
     *,
     page_title: str,
 ) -> str:
-    soup = BeautifulSoup(storage_xhtml, "html.parser")
-    _normalize_tag_names(soup)
-    converter = _Converter(image_processor=image_processor, heading_style="ATX", bullets="-")
-    body_md = converter.convert_soup(soup).strip()
-    return f"# {page_title}\n\n{body_md}\n"
+    return soup_to_markdown(parse_storage(storage_xhtml), image_processor, page_title=page_title)

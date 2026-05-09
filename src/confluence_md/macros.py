@@ -1,9 +1,10 @@
 """Detect diagram macros in Confluence storage XHTML and extract their source where possible.
 
-For mermaid / plantuml the source is inline in <ac:plain-text-body>, so we get full text.
-For drawio / gliffy the diagram is stored as a separate attachment — we flag it so the image
-fallback (the rendered PNG) plus OCR can do the work, and a future enhancement can download
-and decode the .drawio / .gliffy attachment.
+A macro is "inline-source" when it carries the diagram text in <ac:plain-text-body> at
+authoring time (mermaid, plantuml). Drawio and gliffy historically store the source in a
+separate attachment — but our preprocess step (see preprocess.expand_drawio_macros) injects
+a synthetic <ac:plain-text-body> after fetching and decoding the attachment, so by the time
+the converter runs, drawio macros also look "inline" if extraction succeeded.
 """
 from __future__ import annotations
 
@@ -13,23 +14,23 @@ from typing import Optional
 from bs4 import Tag
 
 
-# Macro names that ship the full source as text inside the macro element.
-INLINE_SOURCE_MACROS = {
+# Maps Confluence macro names to the language tag we emit in the fenced code block.
+DIAGRAM_MACROS = {
     "mermaid": "mermaid",
     "mermaid-cloud": "mermaid",
     "plantuml": "plantuml",
     "plantumlrender": "plantuml",
+    "drawio": "drawio",
+    "drawio-board": "drawio",
+    "gliffy": "gliffy",
 }
-
-# Macro names whose source lives in a separate attachment (not yet extracted).
-ATTACHMENT_SOURCE_MACROS = {"drawio", "drawio-board", "gliffy"}
 
 
 @dataclass
 class MacroSource:
-    type: str            # "mermaid" | "plantuml" | "drawio" | "gliffy"
-    source: str          # actual diagram text, or empty if attachment-based
-    inline: bool         # True if source was extracted; False means consult attachment
+    type: str        # "mermaid" | "plantuml" | "drawio" | "gliffy"
+    source: str      # diagram source text; empty if not yet extracted
+    inline: bool     # True if `source` is non-empty
 
 
 def _macro_name(el: Tag) -> Optional[str]:
@@ -37,21 +38,25 @@ def _macro_name(el: Tag) -> Optional[str]:
     return el.get("ac:name") or el.get("ac_name")
 
 
+def get_macro_param(macro_el: Tag, name: str) -> str:
+    """Return the value of <ac:parameter ac:name="name">…</ac:parameter>, or empty string."""
+    for p in macro_el.find_all("ac_parameter"):
+        if p.get("ac:name") == name or p.get("ac_name") == name:
+            return p.get_text().strip()
+    return ""
+
+
 def extract_macro_source(macro_el: Tag) -> Optional[MacroSource]:
     name = _macro_name(macro_el)
     if not name:
         return None
     name = name.lower()
+    if name not in DIAGRAM_MACROS:
+        return None
 
-    if name in INLINE_SOURCE_MACROS:
-        body = macro_el.find(["ac:plain-text-body", "ac_plain-text-body", "ac_plain_text_body"])
-        source = body.get_text() if body else ""
-        return MacroSource(type=INLINE_SOURCE_MACROS[name], source=source.strip(), inline=True)
-
-    if name in ATTACHMENT_SOURCE_MACROS:
-        return MacroSource(type=name.split("-")[0], source="", inline=False)
-
-    return None
+    body = macro_el.find(["ac:plain-text-body", "ac_plain-text-body", "ac_plain_text_body"])
+    source = (body.get_text() if body else "").strip()
+    return MacroSource(type=DIAGRAM_MACROS[name], source=source, inline=bool(source))
 
 
 def find_wrapping_macro(image_el: Tag) -> Optional[MacroSource]:
