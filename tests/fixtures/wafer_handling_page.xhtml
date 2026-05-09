@@ -1,0 +1,120 @@
+<ac:structured-macro ac:name="toc" ac:schema-version="1"/>
+<p>Requirement divided to next steps :</p>
+
+<p><strong>Comment :</strong> Need to add a complete flow for Revive All wafer handling from UX ( User interface ) Side.</p>
+
+<h4>A10 Domains :</h4>
+
+<p><strong>Comment :</strong> Add a case when FI Pulling info from Platform and we lost communication. What should happened then.</p>
+
+<ul>
+  <li>In General FI Server will pull data from platform server but platform will not pull data from FI. So it means that FI Server will "Control" Platform in case of an error.</li>
+</ul>
+
+<ac:image ac:alt="A10 architecture overview" ac:height="576" ac:width="1024">
+  <ri:attachment ri:filename="a10_architecture.png"/>
+  <ac:caption>A10 domains and FI/Platform control direction</ac:caption>
+</ac:image>
+
+<h4>REQ 001 - Safety flag</h4>
+
+<p><strong>General description</strong></p>
+
+<p>Safety flag ( Safety state) will be turn to true according to error definitions below at <strong>REQ 003.</strong></p>
+
+<p>Once this safety flag is turned to True System will move to "Halted" state per state machine.</p>
+
+<ac:structured-macro ac:name="info" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>FIFA will own only "FI Wafer Safety Application" — other states will be handled and developed by Infra team.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:image ac:alt="state machine" ac:height="457" ac:width="815">
+  <ri:attachment ri:filename="safety_state_machine.png"/>
+</ac:image>
+
+<h4>REQ 002 - FI Wafer Safety application state machine</h4>
+
+<p>FIFA SW will act according to state machine at "FI Wafer Safety Application".</p>
+
+<ac:structured-macro ac:name="mermaid-cloud" ac:schema-version="1">
+  <ac:plain-text-body><![CDATA[stateDiagram-v2
+    [*] --> Booted
+    Booted --> Service: power_up
+    Service --> ReviveAll: revive_start
+    ReviveAll --> Service: revive_passed
+    ReviveAll --> UserManual: revive_failed
+    UserManual --> ReviveAll: revive_start
+    Service --> Down: shut_down
+    Service --> Booted: power_down]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<p><strong>Tool State Transitions</strong></p>
+
+<table>
+  <tbody>
+    <tr>
+      <th>Current State</th>
+      <th>Event</th>
+      <th>Actions</th>
+      <th>Next State</th>
+    </tr>
+    <tr>
+      <td>Error Type</td>
+      <td>User Manual Operation Error</td>
+      <td>Tool-busy token is released</td>
+      <td>User Manual Operation</td>
+    </tr>
+    <tr>
+      <td>Revive All wafer handling</td>
+      <td>Revive failed</td>
+      <td>Tool-busy token is released</td>
+      <td>User Manual Operation</td>
+    </tr>
+    <tr>
+      <td>User Manual Operation</td>
+      <td>Revive Start</td>
+      <td>Tool starts to perform Revive All wafer Handling. Tool Busy Token is taken.</td>
+      <td>Revive All wafer Handling</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4>REQ 003 - Consistent Wafer unload option</h4>
+
+<p>Revive All wafer Handling devices will include Emergency Unload that will be triggered upon certain conditions.</p>
+
+<ac:structured-macro ac:name="warning" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>Failure at unload will cause failure of Revive All wafer Handling devices. System will still be left at the same state per state machine.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:image ac:alt="emergency unload sequence">
+  <ri:attachment ri:filename="emergency_unload_sequence.png"/>
+  <ac:caption>Emergency unload — sequence with operator confirmation</ac:caption>
+</ac:image>
+
+<h4>REQ 004 — Error Activating Recovery flow</h4>
+
+<p>Error definitions that will activate "Safety Flag" = True. To Recover "Safety Flag" will require Revive Wafer handling devices.</p>
+
+<ac:structured-macro ac:name="code" ac:schema-version="1">
+  <ac:parameter ac:name="language">python</ac:parameter>
+  <ac:plain-text-body><![CDATA[def evaluate_safety(error: WaferError) -> bool:
+    if error.category in {"HW_FATAL", "WAFER_AT_RISK", "REVIVE_REQUIRED"}:
+        return True
+    return False]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<p>Diagrams below were drawn in draw.io — the macro is detected but the source XML lives in a separate attachment that v0.1 does not yet decode.</p>
+
+<ac:structured-macro ac:name="drawio" ac:schema-version="1">
+  <ac:parameter ac:name="diagramName">recovery_flow_overview</ac:parameter>
+  <ac:parameter ac:name="contentVer">3</ac:parameter>
+</ac:structured-macro>
+
+<ac:image>
+  <ri:attachment ri:filename="recovery_flow_overview.png"/>
+</ac:image>

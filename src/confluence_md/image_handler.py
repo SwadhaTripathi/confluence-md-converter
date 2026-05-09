@@ -70,15 +70,10 @@ def _attr(tag: Tag, *names: str) -> str:
 
 
 def _extract_caption(image_el: Tag) -> str:
-    """Confluence caption lives in <ac:caption> as a sibling or child of <ac:image>."""
-    cap = image_el.find(["ac:caption", "ac_caption"])
-    if cap:
-        return cap.get_text(" ", strip=True)
-    parent = image_el.parent
-    if parent:
-        cap = parent.find(["ac:caption", "ac_caption"])
-        if cap:
-            return cap.get_text(" ", strip=True)
+    """Confluence caption lives in <ac:caption> as a child of the <ac:image> element."""
+    for child in image_el.children:
+        if isinstance(child, Tag) and child.name in {"ac:caption", "ac_caption"}:
+            return child.get_text(" ", strip=True)
     return ""
 
 
@@ -188,6 +183,25 @@ def render_image(ctx: ImageContext) -> str:
     Return the markdown string (with leading/trailing blank lines so it sits cleanly
     in surrounding prose). Return "" to skip the image entirely.
     """
-    raise NotImplementedError(
-        "render_image() is your contribution — see the docstring for guidance."
-    )
+    alt = (ctx.alt_text or ctx.image_filename).strip()
+    safe_caption = ctx.caption.replace('"', "")
+    title_attr = f' "{safe_caption}"' if ctx.caption else ""
+    parts = [f"![{alt}]({ctx.local_path}{title_attr})", ""]
+
+    meta = [f"todo: {ctx.todo_id}"]
+    if ctx.ocr_text:
+        meta.append(f"ocr-confidence: {ctx.ocr_confidence:.2f}")
+    parts.append(f"<!-- {'; '.join(meta)} -->")
+
+    if ctx.caption:
+        parts.append(f"\n**Caption:** {ctx.caption}")
+
+    if ctx.macro_source and ctx.macro_type:
+        parts.append(f"\n**Diagram source ({ctx.macro_type}):**")
+        parts.append(f"```{ctx.macro_type}\n{ctx.macro_source}\n```")
+
+    if ctx.ocr_text:
+        ocr_clean = " ".join(ctx.ocr_text.split())
+        parts.append(f"\n**OCR text:** {ocr_clean}")
+
+    return "\n\n" + "\n".join(parts) + "\n\n"

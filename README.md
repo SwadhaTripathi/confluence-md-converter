@@ -117,6 +117,23 @@ pytest tests/
 
 Tests don't hit the network; they run against fixture XHTML.
 
+## Offline demo (no auth needed)
+
+To see the converter end-to-end without setting up `.env`:
+
+```powershell
+python scripts/run_offline_demo.py
+```
+
+This runs against `tests/fixtures/wafer_handling_page.xhtml` (a representative
+engineering-style storage XHTML) and writes:
+
+- `examples/converter_output_demo.md` — what the converter produces
+- `examples/converter_output_demo.todo.md` — the sidecar TODO list
+
+Compare to `examples/mcp_markdown_baseline.md` (Atlassian MCP's native markdown
+of the same content) to see what extra signals the converter extracts.
+
 ## Sharing with your team
 
 This package is `pip install`-able. Once published to your internal index (or even just
