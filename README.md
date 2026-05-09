@@ -120,6 +120,10 @@ converting page 1234567…
   → C:\…\output\<page-slug>\<page-slug>.md
 ```
 
+The `expanded` and `resolved` lines only appear when the page contains drawio macros or
+internal links respectively. A simple page with neither will just print the
+`converting…` and `→ …` lines — that's normal, not a failure.
+
 You'll find the result at `output/<page-slug>/`:
 
 ```
